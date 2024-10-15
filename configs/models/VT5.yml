@@ -1,0 +1,24 @@
+save_dir: /data/users/abarsky/models/PFL-DocVQA/
+model_name: VT5
+model_weights: rubentito/vt5-base-spdocvqa
+# model_weights: /home/rperez/Projects/P-DocVQA-Centralized/save/checkpoints/VT5_PFL-DocVQA_dp_0.1995563507__2023.11.03_17.40.27/model__9.ckpt
+max_input_tokens: 512
+device: cuda
+seed: 42
+
+visual_module:
+  model: dit
+  model_weights: microsoft/dit-base-finetuned-rvlcdip
+  finetune: False
+
+training_parameters:
+  lr: 2e-4  # 2e-4 default, 1e-3 for LoRA
+  batch_size: 16
+  warmup_iterations: 1000
+  train_epochs: 10
+
+dp_parameters:
+  providers_per_iteration: 1000
+  total_providers: 6574
+  sensitivity: 2  
+  noise_multiplier: 0.230331420898437  # {1: 1.1425, 4: 0.6335, 8: 0.4656}

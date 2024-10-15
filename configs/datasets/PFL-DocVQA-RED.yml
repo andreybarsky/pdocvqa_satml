@@ -1,0 +1,6 @@
+dataset_name: PFL-DocVQA-RED
+imdb_dir: /data/PFL-DocVQA/imdb
+images_dir: /data/PFL-DocVQA/images
+images_h5_path: /data/PFL-DocVQA/images.h5
+provider_docs: /data/PFL-DocVQA/imdb/data_points.json
+provider_client: /data/PFL-DocVQA/imdb/provider2client.json
