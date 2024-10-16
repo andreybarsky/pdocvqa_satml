@@ -1,6 +1,7 @@
 import os, ast, yaml, json, random, datetime, argparse
 import torch
 import numpy as np
+import editdistance
 
 def parse_args():
     parser = argparse.ArgumentParser(description="PFL-DocVQA Centralized Trainng")
@@ -270,4 +271,25 @@ def set_parameters_model(model, parameters, frozen_parameters):
             i += 1
 
     model.model.load_state_dict(params_dict, strict=True)
-    return model
+    return 
+
+def anls(ans, pred, thresh=0.5):
+    ans = [_an.lower().strip() for _an in ans]
+    pred = pred.lower().strip()
+
+    if len(pred) == 0: return 0;
+
+    maxsim = max([1 - editdistance.eval(_an, pred) / max(len(_an), len(pred)) for _an in ans])
+    anls = maxsim if maxsim >= thresh else 0
+    return anls
+
+def accuracy(ans, pred):
+    ans = [_an.lower().strip() for _an in ans]
+    pred = pred.lower().strip()
+
+    if len(pred) == 0: return 0;
+
+    for _an in ans:
+        if _an == pred:
+            return 1
+    return 0
