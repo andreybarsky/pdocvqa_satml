@@ -16,7 +16,7 @@ from build_utils import build_model, build_dataset, build_optimizer, build_provi
 from differential_privacy.dp_utils import add_dp_noise, clip_parameters, flatten_params, get_shape, reconstruct_shape
 
 def train(data_loader, model, optimizer, lr_scheduler, evaluator,
-          logger, config, max_batches=None, use_logger=True, max_steps=None):
+          logger, config, max_batches=None, use_logger=True):
     model.model.train()
     logger.current_epoch += 1
     agg_update = None
@@ -52,18 +52,13 @@ def train(data_loader, model, optimizer, lr_scheduler, evaluator,
     pbar.close()
 
 def train_dp(data_loaders, model, optimizer, evaluator,
-             logger, config, use_logger=True, max_steps=None):
+             logger, config, use_logger=True):
     model.model.train()
     param_keys = list(model.model.state_dict().keys())
     parameters = copy.deepcopy(list(model.model.state_dict().values()))
 
     keyed_parameters = {n: p.requires_grad for n, p in model.model.named_parameters()}
     frozen_parameters = [not keyed_parameters[n] if n in keyed_parameters else config.lora for n, p in model.model.state_dict().items()]
-
-    if use_logger:
-        logger.current_epoch += 1
-    else:
-        logger.current_epoch = 0
 
     agg_update = None
     if not config.use_dp and len(data_loaders) > 1:
@@ -120,6 +115,8 @@ def train_dp(data_loaders, model, optimizer, evaluator,
 
             if use_logger:
                 logger.logger.log(log_dict)
+            logger.current_epoch += 1
+
 
             pbar.set_description(f"{prov_short_name:>20} (P{p:>3}/{len(data_loaders):>3}): B{(batch_idx+1):>2}/{len(provider_dataloader):>2}")
             pbar.update()
@@ -137,14 +134,11 @@ def train_dp(data_loaders, model, optimizer, evaluator,
             old_norm = torch.linalg.vector_norm(new_update, ord=2).item()
             new_update = clip_parameters(new_update, clip_norm=config.dp_params.sensitivity)
 
-
             # Aggregate (Avg)
             if agg_update is None:
                 agg_update = new_update
             else:
                 agg_update += new_update
-
-
 
     # Handle DP after all updates are done
     if config.use_dp:
@@ -201,6 +195,7 @@ def main():
         logger.log_model_parameters(model)
     else:
         logger = lambda:0 # generic struct that can accept attribute allocation
+        logger.current_epoch = 0
 
     epochs = config.train_epochs
 
@@ -209,7 +204,7 @@ def main():
     if config.use_dp:
         # Pick a subset of providers
         provider2docidx = json.load(open(config.provider_docs, 'r'))
-        provider2client = json.load(open(config.provider_client, 'r'))
+        # provider2client = json.load(open(config.provider_client, 'r'))
 
         provider_names = list(provider2docidx.keys()) # plain list of strings
 
@@ -222,29 +217,24 @@ def main():
         config.return_pred_answers = False
 
         if getattr(config, 'eval_start', False):
-            accuracy, anls, _, _ = evaluate(val_data_loader, model, evaluator, config, epoch=-1)
+            logger.current_epoch = -1 # that is, before epoch 0
+            accuracy, anls, _, _ = evaluate(val_data_loader, model, evaluator, config, epoch=logger.current_epoch)
             is_updated = evaluator.update_global_metrics(accuracy, anls, -1)
             if use_logger:
                 logger.log_val_metrics(accuracy, anls, update_best=is_updated)
+            logger.current_epoch += 1
 
-        # build dataloaders once
-        print("Loading datasets", flush=True)
-
-        if not CENTRALIZED: # load each client separately
-            train_datasets = [build_provider_dataset(config, 'train', provider2docidx[f'client_{client_id}'], provider, client_id) for provider, client_id in provider2client if provider != "wsym"]
-        else:
-            train_datasets = []
-            client_id = 0 # all clients are 0 here
-            for p, provider in enumerate(provider2docidx.keys()):
-                train_datasets.append(build_provider_dataset(config, 'train', provider2docidx, provider, client_id=0))
+        # Build dataloaders once
+        train_datasets = []
+        client_id = 0 # all clients are 0 in the centralized setting
+        for p, provider in enumerate(provider2docidx.keys()):
+            train_datasets.append(build_provider_dataset(config, 'train', provider2docidx, provider, client_id=0))
 
 
-        print("Loading dataloaders", flush=True)
         all_train_data_loaders = np.array([DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn) for train_dataset in train_datasets])
 
         # approx number of training steps in 1 non-DP epoch, for eval:
         epoch_size = sum([int(np.ceil(len(train_dataset) // config.batch_size)) for train_dataset in train_datasets])
-        print(f'Approx. number of training steps in 1 epoch: {epoch_size}')
 
 
         steps_trained_since_eval = 0
@@ -252,7 +242,6 @@ def main():
         # note that under DP, these are not strictly 'epochs' but update iterations analogous to FL rounds
         for epoch_ix in range(epochs):
             # subsample providers at every iteration
-            print(f"Subsampling providers at epoch {epoch_ix}", flush=True)
 
             # poisson sampling:
             sampling_probability = config.dp_params.providers_per_iteration / len(all_train_data_loaders)
@@ -260,13 +249,11 @@ def main():
             # in cases of very low sample probability, ensure at least 1 is sampled:
             if sum(sample_mask) == 0:
                 # flip a random one to true:
-                print(f'Poisson sampling got us 0 providers, so picking a single random one')
                 sample_mask[np.random.choice(np.arange(len(sample_mask)))] = True
             train_data_loaders = all_train_data_loaders[sample_mask]
 
             sample_idxs = np.where(sample_mask)[0]
             sampled_providers = [provider_names[i] for i in sample_idxs] # list of provider names
-            print(f"Subsampled {len(train_data_loaders)} providers", flush=True)
 
             batches_per_provider = np.asarray([len(train_loader) for train_loader in train_data_loaders])
             avg_batches = np.mean(batches_per_provider)
@@ -279,27 +266,24 @@ def main():
                 logger.current_epoch = epoch_ix
 
 
-            model = train_dp(train_data_loaders, model, optimizer, evaluator, logger, config, max_steps=max_steps, use_logger=use_logger)
+            model = train_dp(train_data_loaders, model, optimizer, evaluator, logger, config, use_logger=use_logger)
 
             # training with DP only evaluates for every full 'epoch'-equivalent
             # (that is, after as many steps as in non-DP), not at every DP iteration
             this_epoch_training_steps = sum([len(data_loader) for data_loader in train_data_loaders])
             steps_trained_since_eval += this_epoch_training_steps
             if (steps_trained_since_eval >= epoch_size) or (epoch_ix == epochs-1): # ensure evaluation at the very end
-                print(f'Trained for {steps_trained_since_eval} out of {epoch_size}, evaluating...')
-
-                accuracy, anls, _, _ = evaluate(val_data_loader, model, evaluator, config, epoch_ix, max_steps=max_steps)
+                accuracy, anls, _, _ = evaluate(val_data_loader, model, evaluator, config, epoch_ix)
                 is_updated = evaluator.update_global_metrics(accuracy, anls, epoch_ix)
                 if use_logger:
                     logger.log_val_metrics(accuracy, anls, update_best=is_updated)
                 save_model(model, epoch_ix, config, update_best=is_updated)
                 # tick over the counter:
                 steps_trained_since_eval -= epoch_size
-            else:
-                print(f'Trained for {steps_trained_since_eval} out of {epoch_size} ...')
+
 
     else:
-        train_dataset = build_dataset(config, 'train', use_h5_images=True, use_h5_imdb=False)
+        train_dataset = build_dataset(config, 'train', use_h5_images=True)
         train_data_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn)
 
         val_dataset = build_dataset(config, 'valid')
@@ -314,7 +298,7 @@ def main():
 
         if getattr(config, 'eval_start', False):
             logger.current_epoch = -1
-            accuracy, anls, _, _ = evaluate(val_data_loader, model, evaluator, config, epoch=-1)
+            accuracy, anls, _, _ = evaluate(val_data_loader, model, evaluator, config, epoch=logger.current_epoch)
             is_updated = evaluator.update_global_metrics(accuracy, anls, -1)
             if use_logger:
                 logger.log_val_metrics(accuracy, anls, update_best=is_updated)

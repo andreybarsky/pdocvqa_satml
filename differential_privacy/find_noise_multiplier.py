@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument(
         "--total_number_of_providers_per_client",
         type=int,
-        required=True
+        required=True,
         help="Number of groups (providers) in the dataset."
     )
     parser.add_argument(

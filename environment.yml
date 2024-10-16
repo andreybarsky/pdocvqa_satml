@@ -1,0 +1,25 @@
+name: pdocvqa_satml
+channels:
+  - huggingface
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - wandb
+  - python=3.9.13
+  - pytorch=1.11.0
+  - torchaudio=0.11.0
+  - torchvision=0.12.0
+  - cudatoolkit=11.3
+  - mkl=2024.0
+  - pip=22.0.4
+  - pip:
+    - sentencepiece==0.1.96
+    - transformers==4.27.2
+    - editdistance==0.6.0
+    - numpy==1.24.3
+    - scipy==1.11.3
+    - pudb==2024.1
+    - h5py==3.10.0

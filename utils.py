@@ -10,7 +10,7 @@ def parse_args():
     parser.add_argument('-d', '--dataset', type=str, required=True, help='Path to yml file with dataset configuration.')
 
     # Optional
-    parser.add_argument('--eval-start', action='store_true', default=True, help='Whether to evaluate the model before training or not.')
+    parser.add_argument('--eval-start', action='store_true', default=False, help='Whether to evaluate the model before training or not.')
 
     # Overwrite config parameters
     parser.add_argument('-bs', '--batch-size', type=int, help='DataLoader batch size.')
@@ -20,9 +20,9 @@ def parse_args():
 
     parser.add_argument('--lora', action='store_true', default=False, help='Run LoRA.')
 
-    parser.add_argument('--use_dp', action='store_true', default=False, help='Use Differential Privacy.')
+    parser.add_argument('-dp', '--use_dp', action='store_true', default=False, help='Use Differential Privacy.')
 
-    parser.add_argument('--no_logger', action='store_true', default=False, help='Disable WandB logger')
+    parser.add_argument('-nl', '--no_logger', action='store_true', default=False, help='Disable WandB logger')
 
 
     return parser.parse_args()

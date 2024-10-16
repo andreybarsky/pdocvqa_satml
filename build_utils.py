@@ -34,7 +34,7 @@ def build_model(config):
     model.model.to(config.device)
     return model
 
-def build_dataset(config, split, client_id=None, use_h5_images=True, use_h5_imdb=False, **kwargs):
+def build_dataset(config, split, client_id=None, use_h5_images=True, **kwargs):
 
     # Specify special params for data processing depending on the model used.
     dataset_kwargs = {}
@@ -53,9 +53,8 @@ def build_dataset(config, split, client_id=None, use_h5_images=True, use_h5_imdb
     # if config.dataset_name == 'PFL-DocVQA':
         from datasets.PFL_DocVQA import PFL_DocVQA
         h5_img_path = config.images_h5_path if use_h5_images else None
-        h5_imdb_path = config.imdb_h5_path if use_h5_imdb else None
         dataset = PFL_DocVQA(config.imdb_dir, config.images_dir, split, dataset_kwargs,
-                             h5_img_path=h5_img_path, h5_imdb_path=h5_imdb_path, **kwargs)
+                             h5_img_path=h5_img_path, **kwargs)
 
     else:
         raise ValueError
