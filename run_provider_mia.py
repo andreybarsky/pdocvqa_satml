@@ -1,19 +1,14 @@
 import argparse
 import os, json, shutil
-import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from PIL import Image
-
-from build_utils import build_model
-from utils import accuracy, anls
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.ensemble import RandomForestClassifier
 import sklearn.cluster as cluster
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
-from scipy.stats import randint
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_curve
+from scipy.stats import randint, rankdata
 
 SEEDS = [1026, 1027, 1028, 1029, 1030]
 AZK_METRICS = [
@@ -27,12 +22,6 @@ APK_METRICS = [
 
 LABEL_MEM = "member"
 LABEL_NONMEM = "non_member"
-
-def init_vt5(ckpt):
-	visual_module_config = {'finetune': False, 'model': 'dit', 'model_weights': 'microsoft/dit-base-finetuned-rvlcdip'}
-	experiment_config = {'model_weights': ckpt, 'max_input_tokens': 512, 'device': 'cuda', 'visual_module': visual_module_config}
-	model = build_model('vt5', experiment_config)
-	return model
 
 def get_score_df(prov_train, prov_test, score, score_pt, dset):
 	def create_df(provs):
@@ -68,6 +57,8 @@ def get_score_df(prov_train, prov_test, score, score_pt, dset):
 
 def run_inference(model, ckpt, data_dir, use_aux=False, k=100):
 	if model == "vt5":
+		from utils import torch, Image
+		from utils import init_vt5, accuracy, anls
 
 		model = init_vt5(ckpt)
 		model.model.cuda()
@@ -168,7 +159,19 @@ def run_kmeans(X, y, seed=None):
 	acc_cluster_1 = np.mean([X[_ind][0] for _ind, _pred in enumerate(kmeans.labels_) if _pred == 1])
 
 	y_pred = kmeans.labels_ if acc_cluster_0 <= acc_cluster_1 else (1 - kmeans.labels_)
-	return accuracy_score(y, y_pred), balanced_accuracy_score(y, y_pred), f1_score(y, y_pred)
+
+	acc = accuracy_score(y, y_pred)
+	bal_acc = balanced_accuracy_score(y, y_pred)
+	f1 = f1_score(y, y_pred)
+
+	probs = y_pred.astype(float)
+	ranks = rankdata(probs, method='ordinal')
+	fpr, tpr, _ = roc_curve(y, ranks)
+	tpr_01fpr = tpr[np.where(fpr<.1)[0][-1]]
+	tpr_001fpr = tpr[np.where(fpr<.01)[0][-1]]
+	tpr_0001fpr = tpr[np.where(fpr<.001)[0][-1]]
+
+	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
 
 def run_random_forest(X_train, y_train, X_test, y_test, seed=None):
 	param_dist = {'n_estimators': randint(50, 500), 'max_depth': randint(1, 20)}
@@ -182,8 +185,20 @@ def run_random_forest(X_train, y_train, X_test, y_test, seed=None):
 	rand_search.fit(X_train, y_train)
 	best_rf = rand_search.best_estimator_
 
-	y_preds = best_rf.predict(X_test)
-	return accuracy_score(y_test, y_preds), balanced_accuracy_score(y_test, y_preds), f1_score(y_test, y_preds)
+	y_pred = best_rf.predict(X_test)
+	
+	acc = accuracy_score(y_test, y_pred)
+	bal_acc = balanced_accuracy_score(y_test, y_pred)
+	f1 = f1_score(y_test, y_pred)
+
+	probs = best_rf.predict_proba(X_test)[:,1]
+	ranks = rankdata(probs, method='ordinal')
+	fpr, tpr, _ = roc_curve(y_test, ranks)
+	tpr_01fpr = tpr[np.where(fpr<.1)[0][-1]]
+	tpr_001fpr = tpr[np.where(fpr<.01)[0][-1]]
+	tpr_0001fpr = tpr[np.where(fpr<.001)[0][-1]]
+
+	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
 
 def run_unsupervised(args):
 	data_dir = args.data_dir
@@ -214,26 +229,24 @@ def run_unsupervised(args):
 
 	test_providers = list(score_dict.keys())
 
-	avg_accs, bal_accs, f1_scores = [], [], []
+	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs = [], [], [], [], [], []
 	for _i, _seed in enumerate(SEEDS):
 		_, score_df = get_score_df(None, test_providers, score_dict, score_dict_pt, dset)
 
 		X, y = score_df[AZK_METRICS].values, score_df.label.values
-		_avg_acc, _bal_acc, _f1 = run_kmeans(X, y, _seed)
-		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}")
+		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_kmeans(X, y, _seed)
+		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
+				f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
+		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
 
-	avg_acc_mean = np.mean(np.array(avg_accs), axis=0)
-	avg_acc_std = np.std(np.array(avg_accs), axis=0)
-	print(f"Average Accuracy: {avg_acc_mean*100:.2f}±{avg_acc_std*100:.2f}")
-
-	bal_acc_mean = np.mean(np.array(bal_accs), axis=0)
-	bal_acc_std = np.std(np.array(bal_accs), axis=0)
-	print(f"Balanced Accuracy: {bal_acc_mean*100:.2f}±{bal_acc_std*100:.2f}")
-
-	f1_mean = np.mean(np.array(f1_scores), axis=0)
-	f1_std = np.std(np.array(f1_scores), axis=0)
-	print(f"F1 Score: {f1_mean*100:.2f}±{f1_std*100:.2f}")
+	for _n, _lst in zip(
+		["Accuracy", "Balanced Accuracy", "F1 Score", "TPR@FPR=0.1", "TPR@FPR=0.01", "TPR@FPR=0.001"],
+		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs]
+	):
+		_mean = np.mean(np.array(_lst), axis=0)
+		_std = np.std(np.array(_lst), axis=0)
+		print(f"{_n}: {_mean*100:.2f}±{_std*100:.2f}")
 
 def run_supervised(args):
 	data_dir = args.data_dir
@@ -265,26 +278,24 @@ def run_supervised(args):
 	train_providers = [_p for _p,_pdict in score_dict.items() if _pdict['auxiliary']]
 	test_providers = [_p for _p,_pdict in score_dict.items() if not _pdict['auxiliary']]
 
-	avg_accs, bal_accs, f1_scores = [], [], []
+	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs = [], [], [], [], [], []
 	for _i, _seed in enumerate(SEEDS):
 		dftrain, dftest = get_score_df(train_providers, test_providers, score_dict, score_dict_pt, dset)
 		Xtrain, ytrain = dftrain[APK_METRICS].values, dftrain.label.values
 		Xtest, ytest = dftest[APK_METRICS].values, dftest.label.values
-		_avg_acc, _bal_acc, _f1 = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed)
-		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}")
+		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed)
+		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
+				f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
+		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
 
-	avg_acc_mean = np.mean(np.array(avg_accs), axis=0)
-	avg_acc_std = np.std(np.array(avg_accs), axis=0)
-	print(f"Average Accuracy: {avg_acc_mean*100:.2f}±{avg_acc_std*100:.2f}")
-
-	bal_acc_mean = np.mean(np.array(bal_accs), axis=0)
-	bal_acc_std = np.std(np.array(bal_accs), axis=0)
-	print(f"Balanced Accuracy: {bal_acc_mean*100:.2f}±{bal_acc_std*100:.2f}")
-
-	f1_mean = np.mean(np.array(f1_scores), axis=0)
-	f1_std = np.std(np.array(f1_scores), axis=0)
-	print(f"F1 Score: {f1_mean*100:.2f}±{f1_std*100:.2f}")
+	for _n, _lst in zip(
+		["Accuracy", "Balanced Accuracy", "F1 Score", "TPR@FPR=0.1", "TPR@FPR=0.01", "TPR@FPR=0.001"],
+		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs]
+	):
+		_mean = np.mean(np.array(_lst), axis=0)
+		_std = np.std(np.array(_lst), axis=0)
+		print(f"{_n}: {_mean*100:.2f}±{_std*100:.2f}")
 
 def parse_args():
 	parser = argparse.ArgumentParser(description='script to run Provider MI attacks')
