@@ -55,7 +55,7 @@ def get_score_df(prov_train, prov_test, score, score_pt, dset):
 	train_df = create_df(prov_train) if prov_train is not None else None
 	return train_df, test_df
 
-def run_inference(model, ckpt, data_dir, use_aux=False, k=100):
+def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 	if model == "vt5":
 		from utils import torch, Image
 		from utils import init_vt5, accuracy, anls
@@ -63,10 +63,11 @@ def run_inference(model, ckpt, data_dir, use_aux=False, k=100):
 		model = init_vt5(ckpt)
 		model.model.cuda()
 
-		test_data = np.load(os.path.join(data_dir, "SaTML_PMIA_with_label.npy"), allow_pickle=True)
+		test_data = np.load(os.path.join(data_dir, f"SaTML_PMIA_{suffix}.npy"), allow_pickle=True)
 		if use_aux:
-			aux_data = np.load(os.path.join(data_dir, "SaTML_PMIA_auxiliary.npy"), allow_pickle=True)[1:]
+			aux_data = np.load(os.path.join(data_dir, f"SaTML_PMIA_auxiliary_{suffix}.npy"), allow_pickle=True)[1:]
 		vqa_data = np.concatenate((test_data, aux_data)) if use_aux else test_data
+		label_dict = json.load(os.path.join(data_dir, f"SaTML_PMIA_label_{suffix}.json"))
 
 		score_dict = dict()
 		for _ind,_record in tqdm(enumerate(vqa_data)):
@@ -129,7 +130,7 @@ def run_inference(model, ckpt, data_dir, use_aux=False, k=100):
 					'answer': [batch["answers"][0]],
 					'document': [document], 
 					'index': [_ind if _ind < len(test_data) else (_ind-len(test_data)+1)],
-					'label': _record['label'],
+					'label': label_dict[provider]['label'],
 					'auxiliary': _ind > len(test_data)
 				}
 		for _p, _pdict in score_dict.items():
@@ -204,6 +205,7 @@ def run_unsupervised(args):
 	data_dir = args.data_dir
 	dset = data_dir.split('/')[-1]
 	model = args.model
+	target = args.target
 	score_dir = args.score_dir
 	ckpt = args.ckpt
 	pt_ckpt = args.pretrained_ckpt
@@ -211,14 +213,14 @@ def run_unsupervised(args):
 
 	if args.inference:
 		assert ckpt != '', "Model checkpoint must be provided."
-		score_dict_all = run_inference(model, ckpt, data_dir)
+		score_dict_all = run_inference(model, ckpt, target, data_dir)
 		with open(os.path.join(score_dir, f'{model}_{dset}_unsupervised.json'), 'w') as f:
 			json.dump(score_dict_all, f)
 	else:
 		score_dict_all = json.load(open(os.path.join(score_dir, f'{model}_{dset}_unsupervised.json'), 'r'))
 	if not os.path.exists(os.path.join(score_dir, f'{model}_{dset}_unsupervised_pt.json')):
 		assert pt_ckpt != '', "Model checkpoint must be provided."
-		score_dict_all_pt = run_inference(model, pt_ckpt, data_dir)
+		score_dict_all_pt = run_inference(model, pt_ckpt, target, data_dir)
 		with open(os.path.join(score_dir, f'{model}_{dset}_unsupervised_pt.json'), 'w') as f:
 			json.dump(score_dict_all_pt, f)
 	else:
@@ -252,6 +254,7 @@ def run_supervised(args):
 	data_dir = args.data_dir
 	dset = data_dir.split('/')[-1]
 	model = args.model
+	target = args.target
 	score_dir = args.score_dir
 	ckpt = args.ckpt
 	pt_ckpt = args.pretrained_ckpt
@@ -259,14 +262,14 @@ def run_supervised(args):
 
 	if args.inference:
 		assert ckpt != '', "Model checkpoint must be provided."
-		score_dict_all = run_inference(model, ckpt, data_dir, use_aux=True)
+		score_dict_all = run_inference(model, ckpt, target, data_dir, use_aux=True)
 		with open(os.path.join(score_dir, f'{model}_{dset}_supervised.json'), 'w') as f:
 			json.dump(score_dict_all, f)
 	else:
 		score_dict_all = json.load(open(os.path.join(score_dir, f'{model}_{dset}_supervised.json'), 'r'))
 	if not os.path.exists(os.path.join(score_dir, f'{model}_{dset}_supervised_pt.json')):
 		assert pt_ckpt != '', "Model checkpoint must be provided."
-		score_dict_all_pt = run_inference(model, pt_ckpt, data_dir, use_aux=True)
+		score_dict_all_pt = run_inference(model, pt_ckpt, target, data_dir, use_aux=True)
 		with open(os.path.join(score_dir, f'{model}_{dset}_supervised_pt.json'), 'w') as f:
 			json.dump(score_dict_all_pt, f)
 	else:
@@ -300,9 +303,10 @@ def run_supervised(args):
 def parse_args():
 	parser = argparse.ArgumentParser(description='script to run Provider MI attacks')
 
-	parser.add_argument('--method', type=str, required=True, choices=['unsupervised','supervised'], help='attack method.')
+	parser.add_argument('--method',required=True, choices=['unsupervised','supervised'], help='attack method.')
 	parser.add_argument('--data_dir', type=str, required=True, help='Provider MIA train/test data.')
-	parser.add_argument('--model', type=str, required=True, help='model to attack.')
+	parser.add_argument('--model', type=str, required=True, help='supported: VT5.')
+	parser.add_argument('--target', required=True, choices=['dp','nondp'], help='model to attack.')
 	parser.add_argument('--score_dir', type=str, required=True, help='pre-computed scores (.json) if any.')
 	parser.add_argument('--inference', default=False, action='store_true', help='run inference to compute scores.')
 	parser.add_argument('--ckpt', type=str, default='', help='model checkpoint to compute scores.')
