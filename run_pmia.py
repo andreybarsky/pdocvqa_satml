@@ -20,9 +20,6 @@ APK_METRICS = [
 	"delta_loss", "delta_confidence", # G3
 ]
 
-LABEL_MEM = "member"
-LABEL_NONMEM = "non_member"
-
 def get_score_df(prov_train, prov_test, score, score_pt, dset):
 	def create_df(provs):
 		accuracy, anls, confidence, loss =  [], [], [], []
@@ -238,7 +235,7 @@ def run_unsupervised(args):
 		X, y = score_df[AZK_METRICS].values, score_df.label.values
 		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_kmeans(X, y, _seed)
 		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
-				f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
+			f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
 		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
 
@@ -288,7 +285,7 @@ def run_supervised(args):
 		Xtest, ytest = dftest[APK_METRICS].values, dftest.label.values
 		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed)
 		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
-				f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
+			f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
 		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
 
@@ -301,7 +298,7 @@ def run_supervised(args):
 		print(f"{_n}: {_mean*100:.2f}±{_std*100:.2f}")
 
 def parse_args():
-	parser = argparse.ArgumentParser(description='script to run Provider MI attacks')
+	parser = argparse.ArgumentParser(description='script to run Provider MIA baselines.')
 
 	parser.add_argument('--method',required=True, choices=['unsupervised','supervised'], help='attack method.')
 	parser.add_argument('--data_dir', type=str, required=True, help='Provider MIA train/test data.')
