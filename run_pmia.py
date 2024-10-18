@@ -20,6 +20,9 @@ APK_METRICS = [
 	"delta_loss", "delta_confidence", # G3
 ]
 
+LABEL_MEM = "member"
+LABEL_NONMEM = "non_member"
+
 def get_score_df(prov_train, prov_test, score, score_pt, dset):
 	def create_df(provs):
 		accuracy, anls, confidence, loss =  [], [], [], []
