@@ -97,13 +97,18 @@ class VT5:
 
         input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, images, answers)
         outputs = self.model.language_backbone(inputs_embeds=input_embeds, attention_mask=attention_mask, labels=labels)
-        pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask) if return_pred_answer else None
+        if return_pred_answer:
+            pred_answers, prediction_outputs = self.get_answer_from_model_output(input_embeds, attention_mask)
+        else:
+            pred_answers, prediction_outputs =  None, None
 
-        return outputs, pred_answers, pred_answers_conf
+        return outputs, pred_answers, prediction_outputs
 
     def get_answer_from_model_output(self, input_embeds, attention_mask):
         output = self.model.language_backbone.generate(inputs_embeds=input_embeds, attention_mask=attention_mask, output_scores=True, return_dict_in_generate=True, output_attentions=True)
         pred_answers = self.tokenizer.batch_decode(output['sequences'], skip_special_tokens=True)
-        pred_answers_conf = model_utils.get_generative_confidence(output)
 
-        return pred_answers, pred_answers_conf
+        output_masks = (output.sequences[:, 1:] == self.tokenizer.pad_token_id) | (output.sequences[:, 1:] == self.tokenizer.eos_token_id) # b x s 
+        logits, confidences = model_utils.get_generative_confidence(output, output_masks)
+
+        return pred_answers, (logits, confidences)

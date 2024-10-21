@@ -1,8 +1,12 @@
 import argparse
 import os, json, shutil
+import torch
+from PIL import Image
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+
+from utils import accuracy, anls
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.ensemble import RandomForestClassifier
@@ -23,6 +27,19 @@ APK_METRICS = [
 LABEL_MEM = "member"
 LABEL_NONMEM = "non_member"
 
+def seed_many(seed):
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+	torch.cuda.manual_seed(seed)
+
+def init_vt5(ckpt):
+	from models.VT5 import VT5
+	visual_module_config = {'finetune': False, 'model': 'dit', 'model_weights': 'microsoft/dit-base-finetuned-rvlcdip'}
+	experiment_config = {'model_name': 'vt5', 'model_weights': ckpt, 'max_input_tokens': 512, 'device': 'cuda', 'visual_module': visual_module_config}
+	model = VT5(argparse.Namespace(**experiment_config))
+	model.model.to(experiment_config['device'])
+	return model
+
 def get_score_df(prov_train, prov_test, score, score_pt, dset):
 	def create_df(provs):
 		accuracy, anls, confidence, loss =  [], [], [], []
@@ -30,10 +47,8 @@ def get_score_df(prov_train, prov_test, score, score_pt, dset):
 		for _p in provs:
 			# G1
 			accuracy.append(score[_p]['avg.accuracy']); anls.append(score[_p]['avg.anls'])
-
 			# G2
 			confidence.append(score[_p]['avg.confidence']); loss.append(score[_p]['avg.loss'])
-
 			# G3
 			delta_loss.append(
 				np.abs(score[_p]['avg.loss'] - score_pt[_p]['avg.loss'])
@@ -41,9 +56,7 @@ def get_score_df(prov_train, prov_test, score, score_pt, dset):
 			delta_confidence.append(
 				np.abs(score[_p]['avg.confidence'] - score_pt[_p]['avg.confidence'])
 			)
-
-			label.append(1 if score[_p]['label'] == LABEL_MEM else 0)
-
+			label.append(score[_p]['label'])
 		return pd.DataFrame({
 			'accuracy': accuracy, 'anls': anls,
 			'confidence': confidence, 'loss': loss,
@@ -57,9 +70,6 @@ def get_score_df(prov_train, prov_test, score, score_pt, dset):
 
 def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 	if model == "vt5":
-		from utils import torch, Image
-		from utils import init_vt5, accuracy, anls
-
 		model = init_vt5(ckpt)
 		model.model.cuda()
 
@@ -67,7 +77,7 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 		if use_aux:
 			aux_data = np.load(os.path.join(data_dir, f"SaTML_PMIA_auxiliary_{suffix}.npy"), allow_pickle=True)[1:]
 		vqa_data = np.concatenate((test_data, aux_data)) if use_aux else test_data
-		label_dict = json.load(os.path.join(data_dir, f"SaTML_PMIA_label_{suffix}.json"))
+		label_dict = json.load(open(os.path.join(data_dir, f"SaTML_PMIA_label_{suffix}.json"), 'r'))
 
 		score_dict = dict()
 		for _ind,_record in tqdm(enumerate(vqa_data)):
@@ -87,15 +97,11 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 				'contexts': " ".join([_t.lower() for _t in _record['ocr_tokens']]),
 				'answers': [answer.lower()],
 				'image_names': _record['image_name'],
-				'images': model.model.visual_embedding.feature_extractor(images=image, return_tensors="pt"),
+				'images': image,
 				'words': words,
 				'boxes': boxes,
 			}]
-			batch = {
-				_k: [_d[_k] for _d in _batch] if _k != 'images'
-				else {'pixel_values': torch.stack([_d[_k]['pixel_values'].squeeze(0) for _d in _batch])}
-				for _k in _batch[0]
-			}
+			batch = {_k: [_d[_k] for _d in _batch] for _k in _batch[0]}
 
 			model.model.train()
 			out, _, _ = model.forward(batch)
@@ -117,7 +123,7 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 				score_dict[provider]['token_index'].append(indices[0])
 				score_dict[provider]['answer'].append(batch["answers"][0])
 				score_dict[provider]['document'].append(document)
-				score_dict[provider]['index'].append(_ind if _ind < len(test_data) else (_ind-len(test_data)+1))
+				score_dict[provider]['index'].append(_ind if 'label' not in _record else (_ind-len(test_data)+1))
 			else:
 				score_dict[provider] = {
 					'accuracy': [accuracy(batch["answers"][0], preds[0])],
@@ -129,9 +135,9 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 					'token_index': [indices[0]],
 					'answer': [batch["answers"][0]],
 					'document': [document], 
-					'index': [_ind if _ind < len(test_data) else (_ind-len(test_data)+1)],
-					'label': label_dict[provider]['label'],
-					'auxiliary': _ind > len(test_data)
+					'index': [_ind if 'label' not in _record else (_ind-len(test_data)+1)],
+					'label': (1 if _record['label'] == LABEL_MEM else 0) if 'label' in _record else label_dict[provider],
+					'auxiliary': 'label' in _record
 				}
 		for _p, _pdict in score_dict.items():
 			assert len(_pdict['prediction']) == len(_pdict['accuracy']) == len(_pdict['anls']) \
@@ -312,6 +318,7 @@ def parse_args():
 	parser.add_argument('--ckpt', type=str, default='', help='model checkpoint to compute scores.')
 	parser.add_argument('--pretrained_ckpt', type=str, default='', help='model pretrained checkpoint.')
 	parser.add_argument('--min_query', type=int, default=0, help='minimum number of queries (lower bound).')
+	parser.add_argument('--seed', type=int, default=10, help='global seed.')
 
 	args = parser.parse_args()
 	return args
@@ -319,6 +326,8 @@ def parse_args():
 def main():
 	args = parse_args()
 	print(args)
+
+	seed_many(args.seed)
 
 	if args.method == 'unsupervised':
 		run_unsupervised(args)
