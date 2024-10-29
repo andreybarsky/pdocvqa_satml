@@ -1,7 +1,8 @@
-import os, ast, yaml, json, random, datetime, argparse
+import os, ast, yaml, json, random, datetime, argparse, sys
 import torch
 import numpy as np
 import editdistance
+from tqdm import tqdm
 
 def parse_args():
     parser = argparse.ArgumentParser(description="PFL-DocVQA Centralized Trainng")
@@ -301,3 +302,72 @@ def accuracy(ans, pred):
         if _an == pred:
             return 1
     return 0
+
+
+def serialise_h5(config, verbose=False): # image_dir, h5_path):
+    import h5py
+    from PIL import Image, ImageFile
+    # avoid errors during handling of certain truncated images:
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+    TARGET_SIZE = (224,224) # hardcoded vision transformer resolution
+                            # (in principle, width x height, but doesn't matter)
+    MAX_IMAGES = None # we can set this to a small integer for debugging, etc.
+
+    RESIZE_METHOD = Image.BILINEAR # same as used in ViT's resize operation
+
+    source_dir = config.images_dir
+    target_path = config.images_h5_path
+
+    # # automatically get source and target paths from dataset config:
+    # dataset_config_path = "configs/datasets/DocVQA-1.0.yml"
+    # dataset_config = yaml.safe_load(open(dataset_config_path, "r"))
+
+    if verbose:
+        print(f'Loading images from: {source_dir}')
+        print(f'  and saving into: {target_path}')
+
+    # first, get list of images
+    source_filenames = os.listdir(source_dir)
+
+    # create directory of target path if it does not exist:
+    target_dir = '/' + os.path.join(*target_path.split('/')[:-1])
+    if not os.path.exists(target_dir):
+        if verbose:
+            print(f'Creating dir: {target_dir}')
+        os.makedirs(target_dir)
+
+    # create a new h5 file, or open existing one:
+    if os.path.exists(target_path):
+        mode = 'a'
+    else:
+        mode = 'w'
+    h5_file = h5py.File(target_path, mode)
+
+    #### loop through files in source directory:
+    total_source_bytes = 0
+    pbar = tqdm(total=len(source_filenames))
+    for i, source_name in enumerate(source_filenames[:MAX_IMAGES]):
+
+        source_path = os.path.join(source_dir, source_name)
+        total_source_bytes += os.path.getsize(source_path)
+
+        # strip file extension to determine dataset name:
+        target_name = source_name.split('.')[0]
+
+        if target_name not in h5_file:
+            source_img = Image.open(source_path).convert("RGB")
+
+            # resize:
+            resized_arr = np.array(source_img.resize(TARGET_SIZE, resample=RESIZE_METHOD))
+
+            # add to h5 dataset:
+            dset = h5_file.create_dataset(target_name, TARGET_SIZE + (3,), data=resized_arr)
+        pbar.update()
+
+    h5_file.close()
+
+    if verbose:
+        print(f'Finished saving all arrays to: {target_path}')
+        print(f'filesize (h5): {(os.path.getsize(target_path) / 1e6):.1f} MB')
+        print(f'filesize (original files): {(total_source_bytes / 1e6):.1f} MB')

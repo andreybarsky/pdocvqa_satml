@@ -11,7 +11,7 @@ from logger import Logger
 from metrics import Evaluator
 from checkpoint import save_model
 from datasets.PFL_DocVQA import collate_fn
-from utils import seed_everything, load_config, parse_args, set_parameters_model
+from utils import seed_everything, load_config, parse_args, set_parameters_model, serialise_h5
 from build_utils import build_model, build_dataset, build_optimizer, build_provider_dataset, build_centralized_optimizer
 from differential_privacy.dp_utils import add_dp_noise, clip_parameters, flatten_params, get_shape, reconstruct_shape
 
@@ -199,7 +199,11 @@ def main():
 
     epochs = config.train_epochs
 
-
+    if config.use_h5:
+        # check if h5 image directory exists, and if not, create it:
+        if not os.path.exists(config.h5_images_path):
+            print(f'Requested h5 image path but path does not exist, so performing first-time setup and serialising to: {config.h5_images_path}')
+            serialise_h5(config)
 
     if config.use_dp:
         # Pick a subset of providers
