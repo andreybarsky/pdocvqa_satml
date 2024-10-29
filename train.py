@@ -283,7 +283,7 @@ def main():
 
 
     else:
-        train_dataset = build_dataset(config, 'train', use_h5_images=True)
+        train_dataset = build_dataset(config, 'train', use_h5_images=args.use_h5)
         train_data_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn)
 
         val_dataset = build_dataset(config, 'valid')

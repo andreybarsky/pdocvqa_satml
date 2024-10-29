@@ -5,11 +5,6 @@ from torch.utils.data import Dataset
 import numpy as np
 import h5py
 
-### for 1.1:
-# prefix = 'imdb'
-### for 1.0:
-# prefix = 'blue'
-
 # for faster loading when multiple datasets are needed:
 IMDB_CACHE = {}
 H5_CACHE = {}

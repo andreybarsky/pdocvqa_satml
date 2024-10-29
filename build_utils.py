@@ -34,7 +34,7 @@ def build_model(config):
     model.model.to(config.device)
     return model
 
-def build_dataset(config, split, client_id=None, use_h5_images=True, **kwargs):
+def build_dataset(config, split, client_id=None, use_h5_images=False, **kwargs):
 
     # Specify special params for data processing depending on the model used.
     dataset_kwargs = {}

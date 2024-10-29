@@ -6,12 +6,21 @@ import editdistance
 def parse_args():
     parser = argparse.ArgumentParser(description="PFL-DocVQA Centralized Trainng")
 
-    # Required
+    # Required:
     parser.add_argument('-m', '--model', type=str, required=True, help='Path to yml file with model configuration.')
     parser.add_argument('-d', '--dataset', type=str, required=True, help='Path to yml file with dataset configuration.')
 
+    # DP training:
+    parser.add_argument('-dp', '--use_dp', action='store_true', default=False, help='Use Differential Privacy.')
+
+
     # Optional
     parser.add_argument('--eval-start', action='store_true', default=False, help='Whether to evaluate the model before training or not.')
+    parser.add_argument('-nl', '--no_logger', action='store_true', default=False, help='Disable WandB logger')
+
+
+    # For faster training:
+    parser.add_argument('-h5', '--use_h5', action='store_true', default=False, help='Use h5 image archive instead of decompressing jpegs')
 
     # Overwrite config parameters
     parser.add_argument('-bs', '--batch-size', type=int, help='DataLoader batch size.')
@@ -19,11 +28,10 @@ def parse_args():
     parser.add_argument('--seed', type=int, help='Seed to allow reproducibility.')
     parser.add_argument('--save-dir', type=str, help='Checkpoints directory.')
 
+    # Experimental:
     parser.add_argument('--lora', action='store_true', default=False, help='Run LoRA.')
 
-    parser.add_argument('-dp', '--use_dp', action='store_true', default=False, help='Use Differential Privacy.')
 
-    parser.add_argument('-nl', '--no_logger', action='store_true', default=False, help='Disable WandB logger')
 
 
     return parser.parse_args()
@@ -271,7 +279,7 @@ def set_parameters_model(model, parameters, frozen_parameters):
             i += 1
 
     model.model.load_state_dict(params_dict, strict=True)
-    return 
+    return
 
 def anls(ans, pred, thresh=0.5):
     ans = [_an.lower().strip() for _an in ans]
