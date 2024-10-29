@@ -61,7 +61,7 @@ def build_dataset(config, split, client_id=None, use_h5_images=False, **kwargs):
 
     return dataset
 
-def build_provider_dataset(config, split, provider2doc, provider, client_id=None, use_h5_images=True, **kwargs):
+def build_provider_dataset(config, split, provider2doc, provider, client_id=None, use_h5_images=False, **kwargs):
     # Specify special params for data processing depending on the model used.
     dataset_kwargs = {}
 

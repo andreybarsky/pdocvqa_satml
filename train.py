@@ -208,7 +208,7 @@ def main():
 
         provider_names = list(provider2docidx.keys()) # plain list of strings
 
-        val_dataset = build_dataset(config, 'valid')
+        val_dataset = build_dataset(config, 'valid', use_h5_images=args.use_h5)
         val_data_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, collate_fn=collate_fn)
 
         optimizer = build_optimizer(model, config=config)
@@ -228,7 +228,7 @@ def main():
         train_datasets = []
         client_id = 0 # all clients are 0 in the centralized setting
         for p, provider in enumerate(provider2docidx.keys()):
-            train_datasets.append(build_provider_dataset(config, 'train', provider2docidx, provider, client_id=0))
+            train_datasets.append(build_provider_dataset(config, 'train', provider2docidx, provider, client_id=0, use_h5_images=args.use_h5))
 
 
         all_train_data_loaders = np.array([DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn) for train_dataset in train_datasets])
@@ -286,7 +286,7 @@ def main():
         train_dataset = build_dataset(config, 'train', use_h5_images=args.use_h5)
         train_data_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn)
 
-        val_dataset = build_dataset(config, 'valid')
+        val_dataset = build_dataset(config, 'valid', use_h5_images=args.use_h5)
         print(f'Validating on: {val_dataset.imdb_path}')
         val_data_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, collate_fn=collate_fn)
 
