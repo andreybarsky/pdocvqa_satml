@@ -13,11 +13,11 @@ visual_module:
 training_parameters:
   lr: 2e-4  # 2e-4 default, 1e-3 for LoRA
   batch_size: 2
-  warmup_iterations: 1000
-  train_epochs: 10
+#  warmup_iterations: 1000
+  train_epochs: 100
 
-# dp_parameters:
-#   providers_per_iteration: 415
-#   total_providers: 4149
-#   sensitivity: 2
-#   noise_multiplier: 0.9368896484375
+dp_parameters:
+  providers_per_iteration: 415
+  total_providers: 4149
+  sensitivity: 2
+  noise_multiplier: 0.9368896484375

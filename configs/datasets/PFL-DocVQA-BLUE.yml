@@ -1,10 +1,10 @@
 dataset_name: PFL-DocVQA-BLUE
-imdb_dir: /data/shared/PFL-DocVQA/imdb/blue
-images_dir: /data/shared/PFL-DocVQA/images/blue
+imdb_dir: /data/PFL-DocVQA/imdb/blue
 
-# optional, used with cmdline flag -h5 / --use_h5
-images_h5_path: /data/shared/PFL-DocVQA/images/blue_images.h5
+# either point at a directory of jpeg files:
+images_dir: /data/PFL-DocVQA/images/blue/
+# or a hdf5 archive, while using cmdline flag: -h5 / --use_h5
+images_h5_path: /data/PFL-DocVQA/images/blue_images.h5
 
 # used for dp provider-document mapping:
-provider_docs: /data/shared/PFL-DocVQA/imdb/blue/centralized_data_points.json
-# provider_client: /data/shared/PFL-DocVQA/imdb/blue/provider2client.json
+provider_docs: /data/PFL-DocVQA/imdb/blue/centralized_data_points.json

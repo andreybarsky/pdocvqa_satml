@@ -53,7 +53,9 @@ def build_dataset(config, split, client_id=None, use_h5_images=False, **kwargs):
     # if config.dataset_name == 'PFL-DocVQA':
         from datasets.PFL_DocVQA import PFL_DocVQA
         h5_img_path = config.images_h5_path if use_h5_images else None
-        dataset = PFL_DocVQA(config.imdb_dir, config.images_dir, split, dataset_kwargs,
+        img_dir = config.images_dir if hasattr(config, 'images_dir') else None
+
+        dataset = PFL_DocVQA(config.imdb_dir, img_dir, split, dataset_kwargs,
                              h5_img_path=h5_img_path, **kwargs)
 
     else:
@@ -75,13 +77,14 @@ def build_provider_dataset(config, split, provider2doc, provider, client_id=None
         dataset_kwargs['client_id'] = client_id
 
     h5_img_path = config.images_h5_path if use_h5_images else None
+    img_dir = config.images_dir if hasattr(config, 'images_dir') else None
 
     # Build dataset
     indexes = provider2doc[provider]
     assert 0 not in indexes
     if 'DocVQA' in config.dataset_name:
         from datasets.PFL_DocVQA import PFL_DocVQA
-        dataset = PFL_DocVQA(config.imdb_dir, config.images_dir, split, dataset_kwargs,
+        dataset = PFL_DocVQA(config.imdb_dir, img_dir, split, dataset_kwargs,
             indexes, h5_img_path=h5_img_path, **kwargs)
 
     else:

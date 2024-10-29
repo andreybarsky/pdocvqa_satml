@@ -1,3 +1,5 @@
+This is the participation kit for the [Privacy-Preserving Document VQA competition](https://benchmarks.elsa-ai.eu/?ch=2&com=introduction) organised in the context of SATML 2025. This specific repository is tailored to the Red Team Challenge on membership inference attacks and information reconstruction. For the previous Blue Team Challenge, see [this repo](https://github.com/rubenpt91/PFL-DocVQA-Competition). 
+
 # How to use
 
 1. [Set-up environment](#set-up-environment)
@@ -23,7 +25,9 @@ $ git clone https://github.com/andreybarsky/pdocvqa_satml.git
 $ cd pdocvqa_satml
 ```
 
-To install all the dependencies, you need to create a new conda environment with the provided yml file:
+We recommend using a conda environment to handle the dependencies. If you don't have conda set up, follow the instructions [here](https://docs.anaconda.com/miniconda/) to set up Miniconda, or use your own distribution of choice.
+
+To install all the dependencies, create a new conda environment with the provided yml file:
 
 ```bash
 $ conda env create -f environment.yml
@@ -33,15 +37,16 @@ $ conda activate pdocvqa_satml
 
 ## Download dataset
 
-1. Download the dataset from the [ELSA Benchmarks Platform](https://benchmarks.elsa-ai.eu/?ch=2&com=downloads). (this link is temporary)
-2. Modify in the dataset configuration file `configs/datasets/PFL-DocVQA.yml` the following keys:
+1. Download the dataset from the [ELSA Benchmarks Platform](https://benchmarks.elsa-ai.eu/?ch=2&com=downloads).
+2. Modify in the dataset configuration file `configs/datasets/PFL-DocVQA-BLUE.yml` the following keys:
     * **imdb_dir**: Path to the imdb directory with all train and validation clients.
     * **provider_docs**: Path to _centralized_data_points.json_. (for DP training)
    And either:
-    * **images_dir**: Path to the dataset images as a directory of jpg files.
-    * **images_h5_path**: Path to the dataset images as a hdf5 archive.
+    * **images_dir**: Path to the dataset images as a directory of jpg files. (used by default)
+    * **images_h5_path**: Path to the dataset images as a hdf5 archive. (used with the --use_h5 commandline flag)
 
-## Download pretrained weights
+### (Optional) Download pretrained weights
+(model weights will be downloaded automatically from huggingface if not found locally)
 
 1. Download the [pretrained weights](https://datasets.cvc.uab.es/elsa/PFL-DocVQA/vt5_mp-docvqa.ckpt.zip) on SP-DocVQA.
 2. Unzip the weights `unzip vt5_mp-docvqa.ckpt.zip`.
@@ -55,7 +60,7 @@ The name of the dataset and the model **must** match with the name of the config
 In addition, to apply or Differential Privacy, you just need to specify ```--use_dp```.
 
 ```bash
-$ (docvqa_satml) python train.py --dataset PFL-DocVQA --model VT5 --use_dp
+$ (docvqa_satml) python train.py --dataset PFL-DocVQA-BLUE --model VT5 --use_dp
 ```
 
 Below, we show a descriptive list of the possible input arguments that can be used.
