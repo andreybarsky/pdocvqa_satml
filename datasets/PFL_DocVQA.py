@@ -5,7 +5,6 @@ from torch.utils.data import Dataset
 import numpy as np
 import h5py
 
-# for faster loading when multiple datasets are needed:
 IMDB_CACHE = {}
 H5_CACHE = {}
 
@@ -76,7 +75,7 @@ class PFL_DocVQA(Dataset):
                 image_arr = self.h5_img_file[image_names][:]
                 images = Image.fromarray(image_arr)
             else:
-                # original method: decompress the jpegs and resize them inside BEiT
+                assert self.images_dir is not None, "no image dir specified; either specify a valid image dir in dataset config, or use -h5 flag to load images from hdf5 archive directly"
                 image_names = os.path.join(self.images_dir, "{:s}.jpg".format(record['image_name']))
                 images = Image.open(image_names).convert("RGB")
 
