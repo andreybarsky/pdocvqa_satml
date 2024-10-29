@@ -30,7 +30,7 @@ def evaluate(data_loader, model, evaluator, config, epoch):
     for batch_idx, batch in enumerate(tqdm(data_loader, desc=f"Evaluating Epoch {epoch}")):
         bs = len(batch['question_id'])
         with torch.no_grad():
-            outputs, pred_answers, answer_conf = model.forward(batch, return_pred_answer=True)
+            outputs, pred_answers, (_, answer_conf)  = model.forward(batch, return_pred_answer=True)
 
         metric = evaluator.get_metrics(batch['answers'], pred_answers, batch.get('answer_type', None))
 

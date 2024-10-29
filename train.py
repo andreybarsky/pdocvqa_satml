@@ -28,7 +28,7 @@ def train(data_loader, model, optimizer, lr_scheduler, evaluator,
     for batch_idx, batch in enumerate(data_loader):
 
         gt_answers = batch['answers']
-        outputs, pred_answers, answer_conf = model.forward(batch, return_pred_answer=True)
+        outputs, pred_answers, _ = model.forward(batch, return_pred_answer=True)
         loss = outputs.loss
 
         loss.backward()
@@ -91,7 +91,7 @@ def train_dp(data_loaders, model, optimizer, evaluator,
         for batch_idx, batch in enumerate(provider_dataloader):
 
             gt_answers = batch['answers']
-            outputs, pred_answers, answer_conf = model.forward(batch, return_pred_answer=True)
+            outputs, pred_answers, _ = model.forward(batch, return_pred_answer=True)
             loss = outputs.loss
 
             loss.backward()

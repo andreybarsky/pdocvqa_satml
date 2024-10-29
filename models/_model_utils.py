@@ -99,8 +99,9 @@ def get_extractive_confidence(outputs):
     return answ_confidence
 
 
-def get_generative_confidence(output):
-    batch_logits = torch.stack(output.scores, dim=1)[:, :-1, :]  # b x s x V and dropping EOS token
-    decoder_output_confs = torch.amax(batch_logits.softmax(dim=-1), dim=2)
+def get_generative_confidence(output, output_masks):
+    batch_logits = torch.stack(output.scores, dim=1)  # b x s x V
+    decoder_output_confs = torch.amax(batch_logits.softmax(dim=-1), dim=2)  # b x s 
+    decoder_output_confs = decoder_output_confs.masked_fill(output_masks, 1.)  # b x s
     confidences = decoder_output_confs.prod(dim=1)  # b
-    return confidences.tolist()
+    return batch_logits, confidences.tolist()

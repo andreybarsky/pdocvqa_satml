@@ -65,7 +65,7 @@ def test_restore_frozen_weights():
 
     # Do a step:
     for batch in data_loader:
-        outputs, pred_answers, answer_conf = model.forward(batch, return_pred_answer=True)
+        outputs, pred_answers, _ = model.forward(batch, return_pred_answer=True)
         loss = outputs.loss
         loss.backward()
 
