@@ -11,18 +11,15 @@ from utils import accuracy, anls
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.ensemble import RandomForestClassifier
 import sklearn.cluster as cluster
+import sklearn.mixture as mixture
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_curve
 from scipy.stats import randint, rankdata
 
 SEEDS = [1026, 1027, 1028, 1029, 1030]
-AZK_METRICS = [
-	"accuracy", "anls", # G1
-]
-APK_METRICS = [
-	"accuracy", "anls", # G1
-	"confidence", "loss", # G2
-	"delta_loss", "delta_confidence", # G3
-]
+FEATURES = {
+	"G1": ["accuracy", "anls"],
+	"G2": ["confidence", "loss", "delta_loss", "delta_confidence"]
+}
 
 LABEL_MEM = "member"
 LABEL_NONMEM = "non_member"
@@ -40,29 +37,19 @@ def init_vt5(ckpt):
 	model.model.to(experiment_config['device'])
 	return model
 
-def get_score_df(prov_train, prov_test, score, score_pt, dset):
+def get_score_df(prov_train, prov_test, score, score_pt, features):
 	def create_df(provs):
-		accuracy, anls, confidence, loss =  [], [], [], []
-		delta_loss, delta_confidence, label = [], [], []
+		score_dict = dict({_k:[] for _k in features+['label']})
 		for _p in provs:
-			# G1
-			accuracy.append(score[_p]['avg.accuracy']); anls.append(score[_p]['avg.anls'])
-			# G2
-			confidence.append(score[_p]['avg.confidence']); loss.append(score[_p]['avg.loss'])
-			# G3
-			delta_loss.append(
-				np.abs(score[_p]['avg.loss'] - score_pt[_p]['avg.loss'])
-			)
-			delta_confidence.append(
-				np.abs(score[_p]['avg.confidence'] - score_pt[_p]['avg.confidence'])
-			)
-			label.append(score[_p]['label'])
-		return pd.DataFrame({
-			'accuracy': accuracy, 'anls': anls,
-			'confidence': confidence, 'loss': loss,
-			'delta_loss': delta_loss, 'delta_confidence': delta_confidence,
-			'label': label
-		})
+			for _k in features:
+				if 'delta' not in _k:
+					score_dict[_k].append(score[_p][f'avg.{_k}'])
+				else:
+					score_dict[_k].append(
+						np.abs(score[_p][f"avg.{_k.split('_')[-1]}"] - score_pt[_p][f"avg.{_k.split('_')[-1]}"])
+					)
+			score_dict['label'].append(score[_p]['label'])
+		return pd.DataFrame(score_dict)
 
 	test_df = create_df(prov_test)
 	train_df = create_df(prov_train) if prov_train is not None else None
@@ -158,6 +145,31 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 		raise ValueError(f"Invalid model: {model}.")
 	return score_dict
 
+def run_gaussian_mixture(X, y, seed=None, return_rank=False):
+	gm = mixture.GaussianMixture(n_components=2, n_init=10, max_iter=300, random_state=seed)
+	gm.fit(X)
+
+	gm_pred = gm.predict(X)
+
+	acc_cluster_0 = np.mean([X[_ind][0] for _ind, _pred in enumerate(gm_pred) if _pred == 0])
+	acc_cluster_1 = np.mean([X[_ind][0] for _ind, _pred in enumerate(gm_pred) if _pred == 1])
+
+	y_pred = gm_pred if acc_cluster_0 <= acc_cluster_1 else (1 - gm_pred)
+
+	acc = accuracy_score(y, y_pred)
+	bal_acc = balanced_accuracy_score(y, y_pred)
+	f1 = f1_score(y, y_pred)
+
+	probs = gm.predict_proba(X)[:,1] if acc_cluster_0 <= acc_cluster_1 else gm.predict_proba(X)[:,0]
+	ranks = rankdata(probs, method='ordinal')
+	fpr, tpr, _ = roc_curve(y, ranks)
+	tpr_01fpr = tpr[np.where(fpr<.1)[0][-1]]
+	tpr_001fpr = tpr[np.where(fpr<.01)[0][-1]]
+	tpr_0001fpr = tpr[np.where(fpr<.001)[0][-1]]
+	if return_rank:
+		return acc, bal_acc, f1, tpr_001fpr, ranks
+	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
+
 def run_kmeans(X, y, seed=None):
 	kmeans = cluster.KMeans(init="random", n_clusters=2, n_init=10, max_iter=300, random_state=seed)
 	kmeans.fit(X)
@@ -180,7 +192,7 @@ def run_kmeans(X, y, seed=None):
 
 	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
 
-def run_random_forest(X_train, y_train, X_test, y_test, seed=None):
+def run_random_forest(X_train, y_train, X_test, y_test, seed=None, return_rank=False):
 	param_dist = {'n_estimators': randint(50, 500), 'max_depth': randint(1, 20)}
 
 	rf = RandomForestClassifier(random_state=seed)
@@ -204,15 +216,17 @@ def run_random_forest(X_train, y_train, X_test, y_test, seed=None):
 	tpr_01fpr = tpr[np.where(fpr<.1)[0][-1]]
 	tpr_001fpr = tpr[np.where(fpr<.01)[0][-1]]
 	tpr_0001fpr = tpr[np.where(fpr<.001)[0][-1]]
-
+	if return_rank:
+		return acc, bal_acc, f1, tpr_001fpr, ranks
 	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
 
 def run_unsupervised(args):
 	data_dir = args.data_dir
-	dset = data_dir.split('/')[-1]
+	dset = args.dataset
 	model = args.model
 	target = args.target
 	score_dir = args.score_dir
+	features = FEATURES["G1"]+FEATURES["G2"] if args.group == 'ALL' else FEATURES[args.group] 
 	ckpt = args.ckpt
 	pt_ckpt = args.pretrained_ckpt
 	M = args.min_query
@@ -239,17 +253,17 @@ def run_unsupervised(args):
 
 	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs = [], [], [], [], [], []
 	for _i, _seed in enumerate(SEEDS):
-		_, score_df = get_score_df(None, test_providers, score_dict, score_dict_pt, dset)
+		_, score_df = get_score_df(None, test_providers, score_dict, score_dict_pt, features)
 
-		X, y = score_df[AZK_METRICS].values, score_df.label.values
-		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_kmeans(X, y, _seed)
+		X, y = score_df[features].values, score_df.label.values
+		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_gaussian_mixture(X, y, _seed)
 		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
-			f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
+			f"TPR@10%FPR={_tpr_01fpr*100:.2f}, TPR@1%FPR={_tpr_001fpr*100:.2f}, TPR@0.1%FPR={_tpr_0001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
 		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
 
 	for _n, _lst in zip(
-		["Accuracy", "Balanced Accuracy", "F1 Score", "TPR@FPR=0.1", "TPR@FPR=0.01", "TPR@FPR=0.001"],
+		["Accuracy", "Balanced Accuracy", "F1 Score", f"TPR@10%FPR", f"TPR@1%FPR", f"TPR@0.1%FPR"],
 		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs]
 	):
 		_mean = np.mean(np.array(_lst), axis=0)
@@ -258,10 +272,11 @@ def run_unsupervised(args):
 
 def run_supervised(args):
 	data_dir = args.data_dir
-	dset = data_dir.split('/')[-1]
+	dset = args.dataset
 	model = args.model
 	target = args.target
 	score_dir = args.score_dir
+	features = FEATURES["G1"]+FEATURES["G2"] if args.group == 'ALL' else FEATURES[args.group]
 	ckpt = args.ckpt
 	pt_ckpt = args.pretrained_ckpt
 	M = args.min_query
@@ -289,17 +304,17 @@ def run_supervised(args):
 
 	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs = [], [], [], [], [], []
 	for _i, _seed in enumerate(SEEDS):
-		dftrain, dftest = get_score_df(train_providers, test_providers, score_dict, score_dict_pt, dset)
-		Xtrain, ytrain = dftrain[APK_METRICS].values, dftrain.label.values
-		Xtest, ytest = dftest[APK_METRICS].values, dftest.label.values
+		dftrain, dftest = get_score_df(train_providers, test_providers, score_dict, score_dict_pt, features)
+		Xtrain, ytrain = dftrain[features].values, dftrain.label.values
+		Xtest, ytest = dftest[features].values, dftest.label.values
 		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed)
 		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
-			f"TPR@FPR=0.1={_tpr_01fpr*100:.2f}, TPR@FPR=0.01={_tpr_001fpr*100:.2f}, TPR@FPR=0.001={_tpr_0001fpr*100:.2f}")
+			f"TPR@10%FPR={_tpr_01fpr*100:.2f}, TPR@1%FPR={_tpr_001fpr*100:.2f}, TPR@0.1%FPR={_tpr_0001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
 		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
 
 	for _n, _lst in zip(
-		["Accuracy", "Balanced Accuracy", "F1 Score", "TPR@FPR=0.1", "TPR@FPR=0.01", "TPR@FPR=0.001"],
+		["Accuracy", "Balanced Accuracy", "F1 Score", f"TPR@10%FPR", f"TPR@1%FPR", f"TPR@0.1%FPR"],
 		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs]
 	):
 		_mean = np.mean(np.array(_lst), axis=0)
@@ -310,10 +325,12 @@ def parse_args():
 	parser = argparse.ArgumentParser(description='script to run Provider MIA baselines.')
 
 	parser.add_argument('--method',required=True, choices=['unsupervised','supervised'], help='attack method.')
+	parser.add_argument('--dataset', type=str, required=True, help='dataset.')
 	parser.add_argument('--data_dir', type=str, required=True, help='Provider MIA train/test data.')
 	parser.add_argument('--model', type=str, required=True, help='supported: VT5.')
 	parser.add_argument('--target', required=True, choices=['dp','nondp'], help='model to attack.')
 	parser.add_argument('--score_dir', type=str, required=True, help='pre-computed scores (.json) if any.')
+	parser.add_argument('--group', type=str, required=True, choices=['G1','G2', 'ALL'], help='feature group.')
 	parser.add_argument('--inference', default=False, action='store_true', help='run inference to compute scores.')
 	parser.add_argument('--ckpt', type=str, default='', help='model checkpoint to compute scores.')
 	parser.add_argument('--pretrained_ckpt', type=str, default='', help='model pretrained checkpoint.')
@@ -336,6 +353,85 @@ def main():
 	else:
 		raise ValueError(f"Invalid method: {args.method}.")
 
+def some_stats():
+	dp = json.load(open('vt5_satml_dp/vt5_satml_supervised.json' ,'r'))
+	dp_acc, dp_anls, dp_mem_acc, dp_nonmem_acc, dp_mem_anls, dp_nonmem_anls = [], [], [], [], [], []
+	for _k in dp:
+		if _k != 'overall':
+			dp_acc += dp[_k]['accuracy']
+			if dp[_k]['label'] == 1: dp_mem_acc += dp[_k]['accuracy']
+			if dp[_k]['label'] == 0: dp_nonmem_acc += dp[_k]['accuracy']
+			dp_anls += dp[_k]['anls']
+			if dp[_k]['label'] == 1: dp_mem_anls += dp[_k]['anls']
+			if dp[_k]['label'] == 0: dp_nonmem_anls += dp[_k]['anls']
+	print(f"DP(MEMBER/NONMEMBER) ACC={np.mean(dp_acc)}({np.mean(dp_mem_acc)}/{np.mean(dp_nonmem_acc)})")
+	print(f"DP(MEMBER/NONMEMBER) ANLS={np.mean(dp_anls)}({np.mean(dp_mem_anls)}/{np.mean(dp_nonmem_anls)})")
+	
+	nondp = json.load(open('vt5_satml_nondp/vt5_satml_supervised.json' ,'r'))
+	nondp_acc, nondp_anls, nondp_mem_acc, nondp_nonmem_acc, nondp_mem_anls, nondp_nonmem_anls = [], [], [], [], [], []
+	for _k in nondp:
+		if _k != 'overall':
+			nondp_acc += nondp[_k]['accuracy']
+			if nondp[_k]['label'] == 1: nondp_mem_acc += nondp[_k]['accuracy']
+			if nondp[_k]['label'] == 0: nondp_nonmem_acc += nondp[_k]['accuracy']
+			nondp_anls += nondp[_k]['anls']
+			if nondp[_k]['label'] == 1: nondp_mem_anls += nondp[_k]['anls']
+			if nondp[_k]['label'] == 0: nondp_nonmem_anls += nondp[_k]['anls']
+	print(f"NONDP(MEMBER/NONMEMBER) ACC={np.mean(nondp_acc)}({np.mean(nondp_mem_acc)}/{np.mean(nondp_nonmem_acc)})")
+	print(f"NONDP(MEMBER/NONMEMBER) ANLS={np.mean(nondp_anls)}({np.mean(nondp_mem_anls)}/{np.mean(nondp_nonmem_anls)})")
+
+def sweep_multi(target='nondp'):
+	from argparse import Namespace
+	from utils import plot_roc_curve_multi
+
+	args = Namespace(
+		method='unsupervised', dataset='satml', data_dir='../mmMIA/data/satml', 
+		model='vt5', target=target, score_dir=f'../pfldocvqa_eval/vt5_satml_{target}/', 
+		group='ALL', inference=False, ckpt='', pretrained_ckpt='', min_query=0, seed=10
+	)
+
+	def load_score(model, dset, method, score_dir):
+		score_dict_all = json.load(open(os.path.join(score_dir, f'{model}_{dset}_{method}.json'), 'r'))
+		score_dict_all_pt = json.load(open(os.path.join(score_dir, f'{model}_{dset}_{method}_pt.json'), 'r'))
+		score_dict = {_k:_v for _k,_v in score_dict_all.items() if _k != 'overall'}
+		score_dict_pt = {_k:_v for _k,_v in score_dict_all_pt.items() if _k != 'overall'}
+		return score_dict, score_dict_pt
+
+	sup_dict, sup_pt_dict = load_score(args.model, args.dataset, 'supervised', args.score_dir)
+	unsup_dict, unsup_pt_dict = load_score(args.model, args.dataset, 'unsupervised', args.score_dir)
+
+	sup_train = [_p for _p,_pdict in sup_dict.items() if _pdict['auxiliary']]
+	sup_test = [_p for _p,_pdict in sup_dict.items() if not _pdict['auxiliary']]
+	unsup_train = [_p for _p,_pdict in unsup_dict.items() if _pdict['auxiliary']]
+	unsup_test = [_p for _p,_pdict in unsup_dict.items() if not _pdict['auxiliary']]
+
+	labels, scores, legends = [], [], []
+
+	max_metric, max_seed, max_X, max_y = -np.inf, None, None, None
+	for _i, _seed in enumerate(SEEDS):
+		_, score_df = get_score_df(None, sup_test, sup_dict, sup_pt_dict, FEATURES["G1"])
+		X, y = score_df[FEATURES["G1"]].values, score_df.label.values
+		_, _, _, _tpr_001fpr, _rank = run_gaussian_mixture(X, y, _seed, return_rank=True)
+		if _tpr_001fpr > max_metric:
+			max_metric = _tpr_001fpr
+			max_seed = _seed; max_X = _rank; max_y = y
+	print(f"Unsupervised(G1): Seed={max_seed}, TPR@1%FPR={max_metric*100:.2f}")
+	labels += [max_y]; scores += [max_X]; legends += ['Unsupervised(G1)']
+
+	for _features, _legend in zip([FEATURES["G1"], FEATURES["G1"]+FEATURES["G2"]], ["G1", "ALL"]):
+		max_metric, max_seed, max_X, max_y = -np.inf, None, None, None
+		for _i, _seed in enumerate(SEEDS):
+			dftrain, dftest = get_score_df(sup_train, sup_test, sup_dict, sup_pt_dict, _features)
+			Xtrain, ytrain = dftrain[_features].values, dftrain.label.values
+			Xtest, ytest = dftest[_features].values, dftest.label.values
+			_, _, _, _tpr_001fpr, _rank = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed, return_rank=True)
+			if _tpr_001fpr > max_metric:
+				max_metric = _tpr_001fpr
+				max_seed = _seed; max_X = _rank; max_y = y
+		print(f"Supervised({_legend}): Seed={max_seed}, TPR@1%FPR={max_metric*100:.2f}")
+		labels += [max_y]; scores += [max_X]; legends += [f'Supervised({_legend})']
+
+	plot_roc_curve_multi(labels, scores, legends, f'SaTML {target.upper()} Model: Baselines', f'{args.dataset}_{target}')
+
 if __name__ == '__main__':
 	main()
-

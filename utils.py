@@ -301,3 +301,38 @@ def accuracy(ans, pred):
         if _an == pred:
             return 1
     return 0
+
+def plot_roc_curve_multi(labels, ranks, legends, title, name):
+    from sklearn.metrics import roc_curve
+    import matplotlib.pyplot as plt
+
+    save_path = os.path.join(f"roc_curve_{name.replace(' ', '_')}.png")
+    for _i, (_y, _rank, _legend) in enumerate(zip(labels, ranks, legends)):
+        # TPR/FPR
+        fpr, tpr, _ = roc_curve(_y, _rank)
+        tpr_fpr = tpr[np.where(fpr<.01)[0][-1]]
+
+        # Balanced Accuracy
+        bal_acc = 1 - (fpr+(1-tpr))/2
+
+        # F1 Score
+        n_pos = n_neg = len(_rank) // 2
+        tp = tpr * n_pos; fn = n_pos - tp
+        tn = (1 - fpr) * n_neg; fp = n_neg - tn
+        pre = tp / (tp + fp); rec = tp / (tp + fn)
+        f1 = (2 * pre * rec) / (pre + rec)
+
+        print(f"MIA Results: {_legend}")
+        print(f"{'TPR@FPR=0.01':>25} = {tpr_fpr*100:.2f}")
+        print(f"{'(MAX) Balanced Accuracy':>25} = {np.max(bal_acc)*100:.2f}")
+        print(f"{'(MAX) F1':>25} = {f1[np.argmax(bal_acc)]*100:.2f}")
+
+        if _i == 0:
+            plt.plot(fpr, fpr, '--', color='gray', label="Chance level, ACC=50%")
+        plt.plot(fpr, tpr, label=f"{legends[_i]}, ACC={np.max(bal_acc)*100:.2f}%")
+
+    plt.grid(); plt.xlabel('FPR'); plt.ylabel('TPR')
+    plt.semilogx(); plt.semilogy(); plt.xlim(1e-3, 1); plt.ylim(1e-3, 1)
+    plt.title(title); plt.legend(loc='lower right'); plt.legend(fontsize=8)
+    plt.tight_layout(); plt.savefig(save_path, bbox_inches='tight')
+    print(f"Saved figure to: {save_path}")
