@@ -40,6 +40,7 @@ $ conda activate pdocvqa_satml
 2. Modify in the dataset configuration file `configs/datasets/PFL-DocVQA-BLUE.yml` the following keys:
     * **imdb_dir**: Path to the imdb directory containing a train and validation data split.
     * **provider_docs**: Path to _centralized_data_points.json_. (for DP training)
+
    And either:
     * **images_dir**: Path to the dataset images as a directory of jpg files. (used by default)
     * **images_h5_path**: Path to the dataset images as a hdf5 archive. (used with the --use_h5 commandline flag)
