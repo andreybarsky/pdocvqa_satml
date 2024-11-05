@@ -34,23 +34,16 @@ $ conda env create -f environment.yml
 $ conda activate pdocvqa_satml
 ```
 
-
 ## Download dataset
 
 1. Download the dataset from the [ELSA Benchmarks Platform](https://benchmarks.elsa-ai.eu/?ch=2&com=downloads).
 2. Modify in the dataset configuration file `configs/datasets/PFL-DocVQA-BLUE.yml` the following keys:
-    * **imdb_dir**: Path to the imdb directory with all train and validation clients.
+    * **imdb_dir**: Path to the imdb directory containing a train and validation data split.
     * **provider_docs**: Path to _centralized_data_points.json_. (for DP training)
    And either:
     * **images_dir**: Path to the dataset images as a directory of jpg files. (used by default)
     * **images_h5_path**: Path to the dataset images as a hdf5 archive. (used with the --use_h5 commandline flag)
 
-### (Optional) Download pretrained weights
-(model weights will be downloaded automatically from huggingface if not found locally)
-
-1. Download the [pretrained weights](https://datasets.cvc.uab.es/elsa/PFL-DocVQA/vt5_mp-docvqa.ckpt.zip) on SP-DocVQA.
-2. Unzip the weights `unzip vt5_mp-docvqa.ckpt.zip`.
-3. Change the `model_weights` path in `configs/models/VT5.yml` to point to your local ''_.ckpt_'' path.
 
 ## Train and evaluate
 
@@ -75,6 +68,7 @@ Below, we show a descriptive list of the possible input arguments that can be us
 | Dataset                                            | `-d` `--dataset`                            | Yes         | Name of the dataset config file                                       |
 | Batch size                                         | `-bs`, `--batch-size`                       | No          | Batch size                                                            |
 | Initialization seed                                | `--seed`                                    | No          | Initialization seed                                                   |
+| Differential Privacy                               | `--use_h5`                                  | No          | Load images from archive file for faster training                     |
 | Differential Privacy                               | `--use_dp`                                  | No          | Add Differential Privacy noise                                        |
 | Differential Privacy - Sampled providers per Round | `--providers_per_fl_round`                  | No          | Number of groups (providers) sampled in each FL Round when DP is used |
 | Differential Privacy - Noise sensitivity           | `--sensitivity`                             | No          | Upper bound of the contribution per group (provider)                  |
