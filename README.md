@@ -2,20 +2,21 @@ This is the participation kit for the [Privacy-Preserving Document VQA competiti
 
 # How to use
 
-1. [Set-up environment](#set-up-environment)
-2. [Download Dataset](#download-dataset)
-3. [Download Pretrained Weights](#download-pretrained_weights)
-4. [Train and evaluate](#train-and-evaluate)
-5. [Configuration files and input arguments](#configuration-files-and-input-arguments)
-   1. [Input Arguments](#input-arguments)
-   2. [Datasets configuration files](#datasets-configuration-files)
-   3. [Models configuration files](#models-configuration-files)
-      1. [Visual Module](#visual-module)
-      2. [Training parameters](#training-parameters)
-      3. [Federated Learning parameters](#federated-learning-parameters)
-      4. [Differential Privacy Parameters](#differential-privacy-parameters)
-6. [Monitor experiments](#monitor-experiments)
-7. [Project Structure](#project-structure)
+- [How to use](#how-to-use)
+  - [Set-up environment](#set-up-environment)
+  - [Download dataset](#download-dataset)
+  - [Train and evaluate](#train-and-evaluate)
+  - [Configuration files and input arguments](#configuration-files-and-input-arguments)
+    - [Input arguments](#input-arguments)
+    - [Datasets configuration files](#datasets-configuration-files)
+    - [Models configuration files](#models-configuration-files)
+      - [Visual Module](#visual-module)
+      - [Training parameters](#training-parameters)
+    - [Differential Privacy Parameters](#differential-privacy-parameters)
+  - [API calls for red team track 2 competition](#api-calls-for-red-team-track-2-competition)
+    - [Use the API](#use-the-api)
+    - [Query preparation](#query-preparation)
+  - [Monitor experiments](#monitor-experiments)
 
 ## Set-up environment
 
@@ -124,7 +125,108 @@ Below, we show a descriptive list of the possible input arguments that can be us
 | sensitivity            | Differential Privacy Noise sensitivity.                | Float   (0.5)    |
 | noise_multiplier       | Differential Privacy noise multiplier.                 | Float   (1.182)  |
 
+## API calls for red team track 2 competition
+### Use the API
 
+Users can query the model with the provided API code [client.py](./api_red/client.py).  
+
+```bash
+python api_red/client.py  --token YOUR_USER_TOKEN --query_path /PATH/TO/query.json --response_save_path /PATH/TO/SAVE/RESPONSE/
+```
+- `--token`: Your user token obtained during registration as a team in the RED Team Challenge.
+- `--query_path`: Path to your query JSON file.
+- `--response_save_path`: Directory where the response will be saved
+
+
+### Query preparation
+The query (`query.json`) must be a `JSON` file and should adhere to the following structure:
+
+```json
+{
+    "numb_requests": n,
+    "model": "private" | "non-private",
+    "data": [
+        {
+            "question_ID": "unique_question_id",
+            "ocr_tokens": [
+                "TOKEN_1",
+                "TOKEN_2",
+                ...,
+                "TOKEN_N"
+            ],
+            "ocr_normalized_boxes": [
+                [
+                    x_min,
+                    y_min,
+                    x_max,
+                    y_max
+                ],
+                ...,
+                [
+                    x_min,
+                    y_min,
+                    x_max,
+                    y_max
+                ]
+            ],
+            "question": "Your question text here",
+            "encoded_image": "Base64_encoded_image_string"
+        },
+        ...
+    ]
+}
+```
+Where:
+
+- `numb_requests`: an Integer representing total number of requests (or questions) that you want the model to predict.
+
+- `model`: a String indicates the model to use for predictions, it can be one of the two options:  
+  -  `"private"`: Use the private model.  
+  - `"non-private"`: Use the non-private model.  
+  
+- `ocr_tokens`: Array of Strings that are the words or tokens extracted from the document using OCR (e.g., "TOKEN_1", "TOKEN_2", etc.).  
+
+- `ocr_normalized_boxes`: Array of Arrays, each inner array represents the bounding box coordinates of a token, normalized between 0 and 1 with respect to the image size.  Format: [`x_min`, `y_min`, `x_max`, `y_max`]  
+
+- `question`: String, the question you are asking the model about the document.  
+
+- `encoded_image`: String, A Base64-encoded string representation of the document image that the model will analyze to answer the question.
+
+Example: 
+```json
+{
+    "numb_requests": 1,
+    "model": "non-private",
+    "data": [
+        {
+            "question_ID": "1234565454541",
+            "ocr_tokens": [
+                "TOKEN_1",
+                "TOKEN_2",
+                "TOKEN_3"
+            ],
+            "ocr_normalized_boxes": [
+                [0.1, 0.2, 0.3, 0.4],
+                [0.5, 0.6, 0.7, 0.8],
+                [0.7, 0.7, 0.9, 0.8]
+            ],
+            "question": "What is the date of the invoice?",
+            "encoded_image": "iVBORw0KGgoAAAANSUhEUgAACbEAA..."
+        }
+    ]
+}
+```
+
+To encode your images into Base64 format, use the provided script [encode_image.py](./api_red/encode_image.py). Run the script with the following command:
+```bash
+python api_red/encode_image.py --image_dir /PATH/TO/ALL/YOUR/IMAGES/ --output_dir /SAVING/DIR/PATH/
+```
+The images will be saved as `JSON` files with the following structure:
+```json
+{
+    "encoded_image": "iVBORw0KGgoAAAANSUhEUgAACbEAA..."
+}
+```
 ## Monitor experiments
 
 By default, the framework will log all the training and evaluation process in [Weights and Biases (wandb)](https://wandb.ai/home). <br>
