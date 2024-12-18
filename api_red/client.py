@@ -44,7 +44,7 @@ class QueryClient:
             response_path = self.save_response(response.json(), query_id)
             print(f"Results saved in {response_path}")
         elif response.status_code == 401:
-            print("Token not valid")
+            print("Token not valid or expired, make sure token is correct and numb_requests <= remaining_credit")
         elif response.status_code == 403:
             print("Submitted JSON format not valid:", response.json())
         elif response.status_code == 405:
