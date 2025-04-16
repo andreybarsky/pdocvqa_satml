@@ -11,8 +11,8 @@ from logger import Logger
 from metrics import Evaluator
 from checkpoint import save_model
 from datasets.PFL_DocVQA import collate_fn
-from utils import seed_everything, load_config, parse_args, set_parameters_model, serialise_h5
-from build_utils import build_model, build_dataset, build_optimizer, build_provider_dataset, build_centralized_optimizer
+from utils import save_json, seed_everything, load_config, parse_args, set_parameters_model, serialise_h5
+from build_utils import build_dataset_of_subset_of_providers, build_model, build_dataset, build_optimizer, build_provider_dataset, build_centralized_optimizer
 from differential_privacy.dp_utils import add_dp_noise, clip_parameters, flatten_params, get_shape, reconstruct_shape
 
 def train(data_loader, model, optimizer, lr_scheduler, evaluator,
@@ -185,6 +185,21 @@ def main():
 
     seed_everything(config.seed)
 
+    if config.shadow_training:
+        # load the provider2docidx mapping 
+        provider2docidx = json.load(open(config.provider_docs, 'r'))
+
+        # sample a subset of providers
+        all_provider_names = list(provider2docidx.keys()) # plain list of strings
+
+        # sample 50% of providers as in_providers and save json with all information
+        in_indicies = np.random.rand(len(all_provider_names)) <= 0.5
+        list_of_in_providers = np.array(all_provider_names)[in_indicies].tolist()
+        list_of_out_providers = np.array(all_provider_names)[~in_indicies].tolist()
+        shadow_training_providers = {'in_providers': list_of_in_providers, 'out_providers': list_of_out_providers}
+        save_json(config.shadow_training_providers_path, shadow_training_providers)
+
+
     model = build_model(config)
 
     evaluator = Evaluator(case_sensitive=False)
@@ -231,7 +246,15 @@ def main():
         # Build dataloaders once
         train_datasets = []
         client_id = 0 # all clients are 0 in the centralized setting
-        for p, provider in enumerate(provider2docidx.keys()):
+
+        if config.shadow_training:      
+            # take only in_providers      
+            list_of_providers = shadow_training_providers['in_providers']
+        else:
+            # take all providers
+            list_of_providers = provider2docidx.keys()
+
+        for p, provider in enumerate(list_of_providers):
             train_datasets.append(build_provider_dataset(config, 'train', provider2docidx, provider, client_id=0, use_h5_images=args.use_h5))
 
 
@@ -287,7 +310,16 @@ def main():
 
 
     else:
-        train_dataset = build_dataset(config, 'train', use_h5_images=args.use_h5)
+        if config.shadow_training:
+            # load the provider2docidx mapping 
+            provider2docidx = json.load(open(config.provider_docs, 'r'))
+            
+            # only use in_providers
+            list_of_in_providers = shadow_training_providers['in_providers']
+            train_dataset = build_dataset_of_subset_of_providers(config, 'train', provider2docidx, list_of_in_providers, use_h5_images=args.use_h5)
+        else:
+            train_dataset = build_dataset(config, 'train', use_h5_images=args.use_h5)
+        
         train_data_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn)
 
         val_dataset = build_dataset(config, 'valid', use_h5_images=args.use_h5)
