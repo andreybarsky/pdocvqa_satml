@@ -201,8 +201,8 @@ def main():
 
     if config.use_h5:
         # check if h5 image directory exists, and if not, create it:
-        if not os.path.exists(config.h5_images_path):
-            print(f'Requested h5 image path but path does not exist, so performing first-time setup and serialising to: {config.h5_images_path}')
+        if not os.path.exists(config.images_h5_path):
+            print(f'Requested h5 image path but path does not exist, so performing first-time setup and serialising to: {config.images_h5_path}')
             serialise_h5(config)
 
     if config.use_dp:
