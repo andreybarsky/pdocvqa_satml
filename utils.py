@@ -29,6 +29,9 @@ def parse_args():
     parser.add_argument('--seed', type=int, help='Seed to allow reproducibility.')
     parser.add_argument('--save-dir', type=str, help='Checkpoints directory.')
 
+    # for shadow model training
+    parser.add_argument('--shadow_training', action='store_true', default=False, help='Whether to train a shadow model or not (subsample providers).')
+
     # Experimental:
     parser.add_argument('--lora', action='store_true', default=False, help='Run LoRA.')
 
@@ -162,6 +165,7 @@ def load_config(args):
         config.model_name, config.dataset_name, f'_dp_C{config.dp_params.sensitivity:.1f}_e{config.dp_params.noise_multiplier:.3f}' if config.use_dp else '',
         '_lora' if config.lora else '', experiment_date
     )
+    config.shadow_training_providers_path = os.path.join(config.save_dir, f'shadow_training_providers_{config.experiment_name}.json')
 
     return config
 

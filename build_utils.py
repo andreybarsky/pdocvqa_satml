@@ -63,6 +63,45 @@ def build_dataset(config, split, client_id=None, use_h5_images=False, **kwargs):
 
     return dataset
 
+def build_dataset_of_subset_of_providers(config, split, provider2doc, list_of_providers, client_id=None, use_h5_images=False, **kwargs):
+    """
+    This function builds a dataset for a subset of providers.
+    """
+
+    # Specify special params for data processing depending on the model used.
+    dataset_kwargs = {}
+
+    if config.model_name.lower() in ['vt5']:
+        dataset_kwargs['get_raw_ocr_data'] = True
+
+    if config.model_name.lower() in ['vt5']:
+        dataset_kwargs['use_images'] = True
+
+    if client_id:
+        dataset_kwargs['client_id'] = client_id
+
+    h5_img_path = config.images_h5_path if use_h5_images else None
+    img_dir = config.images_dir if hasattr(config, 'images_dir') else None
+
+    # Build dataset by looping through all providers
+    # and collecting the indexes of the documents for each provider
+    list_of_indicies = []
+    for provider in list_of_providers:
+        provider_indexes = provider2doc[provider]
+        list_of_indicies.extend(provider_indexes)
+    
+
+    assert 0 not in list_of_indicies
+    if 'DocVQA' in config.dataset_name:
+        from datasets.PFL_DocVQA import PFL_DocVQA
+        dataset = PFL_DocVQA(config.imdb_dir, img_dir, split, dataset_kwargs,
+            list_of_indicies, h5_img_path=h5_img_path, **kwargs)
+
+    else:
+        raise ValueError
+
+    return dataset
+
 def build_provider_dataset(config, split, provider2doc, provider, client_id=None, use_h5_images=False, **kwargs):
     # Specify special params for data processing depending on the model used.
     dataset_kwargs = {}
