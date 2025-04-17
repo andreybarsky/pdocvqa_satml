@@ -406,4 +406,3 @@ def plot_roc_curve_multi(labels, ranks, legends, title, name):
     plt.title(title); plt.legend(loc='lower right'); plt.legend(fontsize=8)
     plt.tight_layout(); plt.savefig(save_path, bbox_inches='tight')
     print(f"Saved figure to: {save_path}")
-
