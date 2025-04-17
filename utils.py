@@ -403,6 +403,6 @@ def plot_roc_curve_multi(labels, ranks, legends, title, name):
 
     plt.grid(); plt.xlabel('FPR'); plt.ylabel('TPR')
     plt.semilogx(); plt.semilogy(); plt.xlim(1e-3, 1); plt.ylim(1e-3, 1)
-    plt.title(title); plt.legend(loc='lower right'); plt.legend(fontsize=8)
+    plt.title(title, weight='bold'); plt.legend(loc='lower right'); plt.legend(fontsize=8)
     plt.tight_layout(); plt.savefig(save_path, bbox_inches='tight')
     print(f"Saved figure to: {save_path}")

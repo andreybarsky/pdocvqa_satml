@@ -60,11 +60,11 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 		model = init_vt5(ckpt)
 		model.model.cuda()
 
-		test_data = np.load(os.path.join(data_dir, f"SaTML_PMIA_{suffix}.npy"), allow_pickle=True)
+		test_data = np.load(os.path.join(data_dir, f"SaTML_PMIA_test_{suffix}.npy"), allow_pickle=True)
 		if use_aux:
 			aux_data = np.load(os.path.join(data_dir, f"SaTML_PMIA_auxiliary_{suffix}.npy"), allow_pickle=True)[1:]
 		vqa_data = np.concatenate((test_data, aux_data)) if use_aux else test_data
-		label_dict = json.load(open(os.path.join(data_dir, f"SaTML_PMIA_label_{suffix}.json"), 'r'))
+		label_dict = json.load(open(os.path.join(data_dir, f"SaTML_PMIA_label.json"), 'r'))[suffix]
 
 		score_dict = dict()
 		for _ind,_record in tqdm(enumerate(vqa_data)):
@@ -123,7 +123,7 @@ def run_inference(model, ckpt, suffix, data_dir, use_aux=False, k=100):
 					'answer': [batch["answers"][0]],
 					'document': [document], 
 					'index': [_ind if 'label' not in _record else (_ind-len(test_data)+1)],
-					'label': (1 if _record['label'] == LABEL_MEM else 0) if 'label' in _record else label_dict[provider],
+					'label': label_dict[provider],
 					'auxiliary': 'label' in _record
 				}
 		for _p, _pdict in score_dict.items():
@@ -164,11 +164,11 @@ def run_gaussian_mixture(X, y, seed=None, return_rank=False):
 	ranks = rankdata(probs, method='ordinal')
 	fpr, tpr, _ = roc_curve(y, ranks)
 	tpr_01fpr = tpr[np.where(fpr<.1)[0][-1]]
+	tpr_003fpr = tpr[np.where(fpr<.03)[0][-1]]
 	tpr_001fpr = tpr[np.where(fpr<.01)[0][-1]]
-	tpr_0001fpr = tpr[np.where(fpr<.001)[0][-1]]
 	if return_rank:
-		return acc, bal_acc, f1, tpr_001fpr, ranks
-	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
+		return acc, bal_acc, f1, tpr_003fpr, ranks
+	return acc, bal_acc, f1, tpr_01fpr, tpr_003fpr, tpr_001fpr
 
 def run_kmeans(X, y, seed=None):
 	kmeans = cluster.KMeans(init="random", n_clusters=2, n_init=10, max_iter=300, random_state=seed)
@@ -214,11 +214,11 @@ def run_random_forest(X_train, y_train, X_test, y_test, seed=None, return_rank=F
 	ranks = rankdata(probs, method='ordinal')
 	fpr, tpr, _ = roc_curve(y_test, ranks)
 	tpr_01fpr = tpr[np.where(fpr<.1)[0][-1]]
+	tpr_003fpr = tpr[np.where(fpr<.03)[0][-1]]
 	tpr_001fpr = tpr[np.where(fpr<.01)[0][-1]]
-	tpr_0001fpr = tpr[np.where(fpr<.001)[0][-1]]
 	if return_rank:
-		return acc, bal_acc, f1, tpr_001fpr, ranks
-	return acc, bal_acc, f1, tpr_01fpr, tpr_001fpr, tpr_0001fpr
+		return acc, bal_acc, f1, tpr_003fpr, ranks
+	return acc, bal_acc, f1, tpr_01fpr, tpr_003fpr, tpr_001fpr
 
 def run_unsupervised(args):
 	data_dir = args.data_dir
@@ -251,20 +251,20 @@ def run_unsupervised(args):
 
 	test_providers = list(score_dict.keys())
 
-	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs = [], [], [], [], [], []
+	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_003fprs, tpr_001fprs = [], [], [], [], [], []
 	for _i, _seed in enumerate(SEEDS):
 		_, score_df = get_score_df(None, test_providers, score_dict, score_dict_pt, features)
 
 		X, y = score_df[features].values, score_df.label.values
-		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_gaussian_mixture(X, y, _seed)
+		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_003fpr, _tpr_001fpr = run_gaussian_mixture(X, y, _seed)
 		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
-			f"TPR@10%FPR={_tpr_01fpr*100:.2f}, TPR@1%FPR={_tpr_001fpr*100:.2f}, TPR@0.1%FPR={_tpr_0001fpr*100:.2f}")
+			f"TPR@10%FPR={_tpr_01fpr*100:.2f}, TPR@3%FPR={_tpr_003fpr*100:.2f}, TPR@1%FPR={_tpr_001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
-		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
+		tpr_01fprs.append(_tpr_01fpr); tpr_003fprs.append(_tpr_003fpr); tpr_001fprs.append(_tpr_001fpr)
 
 	for _n, _lst in zip(
-		["Accuracy", "Balanced Accuracy", "F1 Score", f"TPR@10%FPR", f"TPR@1%FPR", f"TPR@0.1%FPR"],
-		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs]
+		["Accuracy", "Balanced Accuracy", "F1 Score", f"TPR@10%FPR", f"TPR@3%FPR", f"TPR@1%FPR"],
+		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_003fprs, tpr_001fprs]
 	):
 		_mean = np.mean(np.array(_lst), axis=0)
 		_std = np.std(np.array(_lst), axis=0)
@@ -302,20 +302,20 @@ def run_supervised(args):
 	train_providers = [_p for _p,_pdict in score_dict.items() if _pdict['auxiliary']]
 	test_providers = [_p for _p,_pdict in score_dict.items() if not _pdict['auxiliary']]
 
-	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs = [], [], [], [], [], []
+	avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_003fprs, tpr_001fprs = [], [], [], [], [], []
 	for _i, _seed in enumerate(SEEDS):
 		dftrain, dftest = get_score_df(train_providers, test_providers, score_dict, score_dict_pt, features)
 		Xtrain, ytrain = dftrain[features].values, dftrain.label.values
 		Xtest, ytest = dftest[features].values, dftest.label.values
-		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_001fpr, _tpr_0001fpr = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed)
+		_avg_acc, _bal_acc, _f1, _tpr_01fpr, _tpr_003fpr, _tpr_001fpr = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed)
 		print(f"Seed={_seed}, AVG_ACC={_avg_acc*100:.2f}, BAL_ACC={_bal_acc*100:.2f}, F1={_f1*100:.2f}, " +\
-			f"TPR@10%FPR={_tpr_01fpr*100:.2f}, TPR@1%FPR={_tpr_001fpr*100:.2f}, TPR@0.1%FPR={_tpr_0001fpr*100:.2f}")
+			f"TPR@10%FPR={_tpr_01fpr*100:.2f}, TPR@3%FPR={_tpr_003fpr*100:.2f}, TPR@1%FPR={_tpr_001fpr*100:.2f}")
 		avg_accs.append(_avg_acc); bal_accs.append(_bal_acc); f1_scores.append(_f1)
-		tpr_01fprs.append(_tpr_01fpr); tpr_001fprs.append(_tpr_001fpr); tpr_0001fprs.append(_tpr_0001fpr)
+		tpr_01fprs.append(_tpr_01fpr); tpr_003fprs.append(_tpr_003fpr); tpr_001fprs.append(_tpr_001fpr)
 
 	for _n, _lst in zip(
-		["Accuracy", "Balanced Accuracy", "F1 Score", f"TPR@10%FPR", f"TPR@1%FPR", f"TPR@0.1%FPR"],
-		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_001fprs, tpr_0001fprs]
+		["Accuracy", "Balanced Accuracy", "F1 Score", f"TPR@10%FPR", f"TPR@3%FPR", f"TPR@1%FPR"],
+		[avg_accs, bal_accs, f1_scores, tpr_01fprs, tpr_003fprs, tpr_001fprs]
 	):
 		_mean = np.mean(np.array(_lst), axis=0)
 		_std = np.std(np.array(_lst), axis=0)
@@ -411,11 +411,11 @@ def sweep_multi(target='nondp'):
 	for _i, _seed in enumerate(SEEDS):
 		_, score_df = get_score_df(None, sup_test, sup_dict, sup_pt_dict, FEATURES["G1"])
 		X, y = score_df[FEATURES["G1"]].values, score_df.label.values
-		_, _, _, _tpr_001fpr, _rank = run_gaussian_mixture(X, y, _seed, return_rank=True)
-		if _tpr_001fpr > max_metric:
-			max_metric = _tpr_001fpr
+		_, _, _, _tpr_003fpr, _rank = run_gaussian_mixture(X, y, _seed, return_rank=True)
+		if _tpr_003fpr > max_metric:
+			max_metric = _tpr_003fpr
 			max_seed = _seed; max_X = _rank; max_y = y
-	print(f"Unsupervised(G1): Seed={max_seed}, TPR@1%FPR={max_metric*100:.2f}")
+	print(f"Unsupervised(G1): Seed={max_seed}, TPR@3%FPR={max_metric*100:.2f}")
 	labels += [max_y]; scores += [max_X]; legends += ['Unsupervised(G1)']
 
 	for _features, _legend in zip([FEATURES["G1"], FEATURES["G1"]+FEATURES["G2"]], ["G1", "ALL"]):
@@ -424,11 +424,11 @@ def sweep_multi(target='nondp'):
 			dftrain, dftest = get_score_df(sup_train, sup_test, sup_dict, sup_pt_dict, _features)
 			Xtrain, ytrain = dftrain[_features].values, dftrain.label.values
 			Xtest, ytest = dftest[_features].values, dftest.label.values
-			_, _, _, _tpr_001fpr, _rank = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed, return_rank=True)
-			if _tpr_001fpr > max_metric:
-				max_metric = _tpr_001fpr
+			_, _, _, _tpr_003fpr, _rank = run_random_forest(Xtrain, ytrain, Xtest, ytest, _seed, return_rank=True)
+			if _tpr_003fpr > max_metric:
+				max_metric = _tpr_003fpr
 				max_seed = _seed; max_X = _rank; max_y = y
-		print(f"Supervised({_legend}): Seed={max_seed}, TPR@1%FPR={max_metric*100:.2f}")
+		print(f"Supervised({_legend}): Seed={max_seed}, TPR@3%FPR={max_metric*100:.2f}")
 		labels += [max_y]; scores += [max_X]; legends += [f'Supervised({_legend})']
 
 	plot_roc_curve_multi(labels, scores, legends, f'SaTML {target.upper()} Model: Baselines', f'{args.dataset}_{target}')
